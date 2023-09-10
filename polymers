@@ -1,0 +1,306 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import math
+import random
+from scipy import interpolate
+from mpl_toolkits.mplot3d import Axes3D
+from pandas.io.excel import ExcelWriter
+import os
+from numpy import nan
+from scipy. integrate import odeint
+
+Pi = math.pi
+E = math.e
+Na=6.022e23
+
+def graf(X, Y, flag):
+    a = b = c = d = e = f = 0
+    for i in range (len(X)):
+        c = c + X[i] * Y[i]
+        d = d + X[i]
+        e = e + Y[i]
+        f = f + X[i] ** 2
+    a = (len(X) * c - d * e) / (len(X) * f - d ** 2)
+    b = (e - a * d) / len(X)
+    if flag == 1:
+        Ynew = []
+        for i in range(len(Y)):
+            Ynew.append(a * X[i] + b)
+        plt.plot(X, Ynew)
+    return a, b
+
+def sr(rez):
+    s = 0
+    for i in range(len(rez)):
+        s += rez[i]
+    return(s / len(rez))
+
+def de(rez):
+    k = 0
+    for i in range(len(rez)):
+        k += (rez[i] - sr(rez)) ** 2
+    return math.sqrt(k / len(rez))   
+
+class Pol:
+    def __init__(self, name, file_path, full_days, mass, days, Mw, Mn):
+        self.name = name
+        self.full_days = full_days
+        self.mass = mass
+        self.mass_p = [self.mass[i] / self.mass[0] * 100 for i in range(len(self.mass))]
+        
+        self.days = days
+        self.Mw = Mw
+        self.Mn = Mn
+        self.Mw_p = []
+        self.Mn_p = []
+        self.PDI = []
+        
+        for i in range(len(self.Mw)):
+            self.PDI.append(self.Mw[i] / self.Mn[i])
+            self.Mw_p.append(self.Mw[i] / self.Mw[0] * 100)
+            self.Mn_p.append(self.Mn[i] / self.Mn[0] * 100)
+            
+        ff = interpolate.interp1d(self.Mn_p,self.days, fill_value = 'extrapolate', kind = 'linear')
+        self.tc = float(ff(10))
+        self.days_p = [self.days[i] / self.tc for i in range(len(self.days))]
+    
+    def __repr__(self):
+        return f'{self.name}'
+        
+    def plot(self, key1, key2, mode = "none", sc = True):
+        legend = []
+        for i in range(len(self)):
+            legend.append(self[i].name)
+            x = eval(self[i].name + '.' + key1)
+            y = eval(self[i].name + '.' + key2)
+            match mode:
+                case "none":
+                    plt.scatter(x, y)
+                case "plot":
+                    plt.plot(x, y)
+                    if sc: plt.scatter(x, y)
+                case "extrapol":
+                    f = interpolate.interp1d(x, y, fill_value = 'extrapolate', kind = 'cubic')
+                    xnew = np.linspace(min(x), max(x), 1000)
+                    ynew = f(xnew)
+                    plt.plot(xnew, ynew)
+                    if sc: plt.scatter(x, y)
+                case "autocatalytic":
+                    ynew = [math.log(y[i]) for i in range(len(x))]
+                    plt.plot(x, ynew)
+                    if sc: plt.scatter(x, ynew)
+
+                case "noncatalytic":
+                    ynew = [1 / (y[i]) for i in range(len(x))]
+                    plt.plot(x, ynew)
+                    if sc: plt.scatter(x, ynew)
+
+                case "gleadall":
+                    ynew = [1 / (y[i] ** 0.5) for i in range(len(x))]
+                    plt.plot(x, ynew)
+                    if sc: plt.scatter(x, ynew)     
+            
+        plt.grid()
+        plt.xlabel(key1, fontsize = 14)
+        plt.ylabel(key2, fontsize = 14)
+        plt.legend(legend, bbox_to_anchor = (1.05, 1), loc = 'upper left', borderaxespad = 0.)
+        plt.show()
+        
+        
+    def han(self, auto_c, a = 0.4, b = 1, temp = [], tc = -273, Ceo = 17300, Nchains0 = 4.32, Mol_mass = "Mn"):
+        m = 4
+        n = 0.5
+        dict_k2 = []
+        po = Ceo * (1 / a - 1 / m) / Nchains0
+        
+        for p in self:
+            if Mol_mass == "Mn":
+                Mm = p.Mn
+            else:
+                Mm = p.Mw
+            time = [i for i in range(0, int(p.days[-1]) + 1)]
+            ded = 10**8
+            k = 0
+            for k2 in auto_c:
+                delta = 0
+                tinf = 2 / (a * k2 * Ceo ** 0.5)
+
+                Mn_p = [(1 - math.tanh((t / tinf) ** 2)) / (1 + po * math.tanh((t / tinf) ** 2)) for t in time]
+                Mn = [i * Mm[0] for i in Mn_p]
+                delta_mm_p = [(Mn[p.days[i]] - Mm[i]) / Mm[i] for i in range(len(Mm))]
+
+                for l in delta_mm_p:
+                    delta += l ** 2
+                de = math.sqrt(delta / len(delta_mm_p))
+
+                if de < ded:
+                    ded = de
+                    k = k2
+
+            tinf = 2 / (a * k * Ceo ** 0.5)
+
+            Mn_p = [(1 - math.tanh((t / tinf) ** 2)) / (1 + po * math.tanh((t / tinf) ** 2)) for t in time]
+            Mn = [i * Mm[0] for i in Mn_p]
+
+            plt.title(f'k2 = {k} , d = {ded}, a = {a}, b = {b}', fontsize = 14)
+            plt.plot(time, Mn)
+            Pol.plot([p], "days", Mol_mass)
+
+            if len(temp) > 0:
+                dict_k2.append(k)
+        
+        if len(temp) > 0:
+            dict = [[1 / (i - tc) for i in temp], [math.log(i) for i in dict_k2]]
+            a_k, b_k = graf(dict[0], dict[1], 0)
+            print(f'Ek = {-a_k * 8.31}\nk2 = {E ** b_k}')
+        
+    def linear(self, non_c, auto_c, Ceo = 17300, Nchains0 = 4.32, sq = 1, ln = 0, temp = [], tc = -273, Mol_mass = "Mn"):
+        dict_k1 = []
+        dict_k2 = []
+        
+        for p in self:
+            if Mol_mass == "Mn":
+                Mm = p.Mn
+            else:
+                Mm = p.Mw
+            ded = 10 ** 8
+            k1 = k2 = 0
+            for x in non_c:
+                for y in auto_c:
+                    delta = 0
+                    delta_mm_p = [1 - (-Mm[0] + sq / (1 / Mm[0] ** 0.5 + (x * j)) ** 2 
+                          + 1 / (1 / Mm[0] + (y * j)) + ln * Mm[0] * E ** (-x * j)) / Mm[l] for l, j in enumerate(p.days)]
+                    
+                    for l in delta_mm_p:
+                        delta += l ** 2
+                    de = math.sqrt(delta / len(delta_mm_p))
+
+                    if de < ded:
+                        ded = de
+                        k2 = x
+                        k1 = y
+
+            time = np.arange(0, p.days[-1], 1)
+            Mn = [-Mm[0] + sq / (1 / Mm[0] ** 0.5 + (k2 * j)) ** 2 
+                  + 1 / (1 / Mm[0] + (k1 * j)) + ln * Mm[0] * E ** (-k2 * j) for j in time]
+            
+            plt.title(f'k2 = {k2} , k1 = {k1}, d = {ded}', fontsize = 14)
+            plt.plot(time, Mn)
+            Pol.plot([p], "days", Mol_mass)
+            if len(temp) > 0:
+                dict_k1.append(k1)
+                dict_k2.append(k2)     
+        if len(temp) > 0:
+            dict = [[1 / (i - tc) for i in temp], [math.log(i) for i in dict_k2]]
+            a_k, b_k = graf(dict[0], dict[1], 0)
+            print(f'Ek2 = {-a_k * 8.31}\nk2 = {E ** b_k}')
+            
+            dict = [[1 / (i - tc) for i in temp], [math.log(i) for i in dict_k1]]
+            a_k, b_k = graf(dict[0], dict[1], 0)
+            print(f'Ek1 = {-a_k * 8.31}\nk1 = {E ** b_k}')
+            
+    def Gleadall(self, kr_a, a_rate, kr_n, n_rate, d_good, Ceo, Mo, Xc0, W, px, Vc, Xmax, alpha, beta, Mol_mass):
+        #alpha = 28
+        #beta = 2
+        def f(y, t, a, b, c, d):
+            y1, y2, Xc = y
+            return [
+                (a + b * ((y2 + alpha / 4 * (y1) ** beta) / (1 - Xc)) ** 0.5) * (Ceo - W * Xc - alpha * (y1) ** beta - y2), 
+                (c + d * ((y2 + alpha / 4 * (y1) ** beta) / (1 - Xc)) ** 0.5) * 2 * (Nchain0 + 0.9 * y1), 
+                (Xmax - Xc) * px * Na * Vc * (b * ((y2 + alpha / 4 * (y1) ** beta) / (1 - Xc)) ** 0.5) * (Ceo - W * Xc - alpha * (y1) ** beta - y2)
+            ]
+        for p in self:
+            t = p.days
+            y0 = [0, 0, Xc0]
+            if Mol_mass == "Mn":
+                Mm = p.Mn
+            else:
+                Mm = p.Mw
+            Nchain0 = Ceo * Mo / Mm[0]
+            ded = 10 ** 7
+            for a in kr_a:
+                for b in kr_n:
+                    c = a * a_rate
+                    d = b * n_rate
+                    delta = 0
+                    w = odeint(f, y0, t, (a, b, c, d))
+                    y1 = w[:, 0]
+                    y2 = w[:, 1]
+                    Xc = w[:, 2]
+                    delta_mm_p = [(Mm[i] - (Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i])) / Mm[i] for i in range(len(p.days))]
+                    for l in delta_mm_p:
+                        delta += l ** 2
+                    de = math.sqrt(delta / len(delta_mm_p))
+                    if de <= d_good:
+                        Mn = [(Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i]) for i in range(len(p.days))]
+                        plt.plot(p.days, Mn)
+                        Pol.plot([p], "days", Mol_mass, mode = 'extrapol')
+                        plt.show()
+                        kr1 = a
+                        kr2 = b
+                        ke1 = c
+                        ke2 = d
+                        print(f'kr1 = {kr1}\nkr2 = {kr2}\nke1 = {ke1}\nke2 = {ke2}\ndelta = {de}\n')
+                        print(Xc.tolist())
+                        return "finished"
+                    elif de < ded:
+                        kr1 = a
+                        kr2 = b
+                        ke1 = c
+                        ke2 = d
+                        ded = de
+            w = odeint(f, y0, t, (kr1, kr2, ke1, ke2))
+            y1 = w[:, 0]
+            y2 = w[:, 1]
+            Xc = w[:, 2]
+            Mn = [(Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i]) for i in range(len(p.days))]
+
+            plt.plot(p.days, Mn)
+            Pol.plot([p], "days", Mol_mass, mode = 'extrapol')
+            plt.show()
+            print(f'kr1 = {kr1}\nkr2 = {kr2}\nke1 = {ke1}\nke2 = {ke2}\ndelta = {ded}\n')
+            print(Xc.tolist())
+        
+    def table(self):
+        df_mass = pd.DataFrame({"full_days":self.full_days, "mass":self.mass, "mass %":self.mass_p})
+        df_mm = pd.DataFrame({"days":self.days, "Mw":self.Mw, "Mw %":self.Mw_p, "Mn":self.Mn, "Mn %":self.Mn_p, "PDI":self.PDI})
+        return pd.concat([df_mass, df_mm], axis = 1)
+    
+    def excel(self):
+        for i in range(len(self)):
+            with ExcelWriter(self.file_path, engine = "openpyxl", mode = "a" if os.path.exists(self.file_path) else "w") as writer:
+                try:
+                    writer.book.remove(writer.book[f"{self[i].name}"])
+                except:
+                    pass
+                finally:
+                    (self[i].table()).to_excel(writer, sheet_name = f"{self[i].name}", index = False)
+
+                    
+Array = lambda df, name: [item for item in df[name] if not(math.isnan(item)) == True] if df.columns.tolist().count(name) == 1 else []
+Polymers = []
+                    
+data_df = pd.ExcelFile("Downloads/my_pol.xlsx")
+for i in data_df.sheet_names:
+    globals()[i] = Pol(i, "Downloads/my_pol.xlsx", Array(data_df.parse(i), 'full_days'), Array(data_df.parse(i), 'mass'), Array(data_df.parse(i), 'days'), Array(data_df.parse(i), 'Mw'), Array(data_df.parse(i), 'Mn'))
+    Polymers.append(globals()[i])
+print(Polymers)
+
+                    
+Array = lambda df, name: [item for item in df[name] if not(math.isnan(item)) == True] if df.columns.tolist().count(name) == 1 else []
+Polymers = []
+                    
+data_df = pd.ExcelFile("Downloads/my_pol.xlsx")
+for i in data_df.sheet_names:
+    globals()[i] = Pol(i, "Downloads/my_pol.xlsx", Array(data_df.parse(i), 'full_days'), Array(data_df.parse(i), 'mass'), Array(data_df.parse(i), 'days'), Array(data_df.parse(i), 'Mw'), Array(data_df.parse(i), 'Mn'))
+    Polymers.append(globals()[i])
+print(Polymers)
+
+Pol.plot(Polymers,"days","Mw_p",mode='extrapol')
+Pol.plot(Polymers[1:3],"days","Mn_p",mode='autocatalytic')
+
+Pol.linear(Polymers, np.linspace(1e-7, 1e-3, 101), np.linspace(1e-8, 1e-3, 101), Mol_mass = "Mw")
+Pol.han(Polymers, np.linspace(1e-7, 1e-3, 101), Mol_mass = "Mw")
+#for example only autocatalytic and noncatalytic random scission
+Pol.Gleadall(Polymers, np.linspace(1e-7, 1e-3, 101), 0, np.linspace(1e-7, 1e-3, 101), 0, 0.05, 17300, 72, 0, 17300, 0.00, 4.19e-24, 0.655, 0.4, 1, "Mw")
