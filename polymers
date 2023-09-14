@@ -233,14 +233,19 @@ class Pol:
                         delta += l ** 2
                     de = math.sqrt(delta / len(delta_mm_p))
                     if de <= d_good:
-                        Mn = [(Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i]) for i in range(len(p.days))]
-                        plt.plot(p.days, Mn)
-                        Pol.plot([p], "days", Mol_mass, mode = 'extrapol')
-                        plt.show()
                         kr1 = a
                         kr2 = b
                         ke1 = c
                         ke2 = d
+                        t = np.linspace(p.days[0], p.days[-1], 101)
+                        w = odeint(f, y0, t, (kr1, kr2, ke1, ke2))
+                        y1 = w[:, 0]
+                        y2 = w[:, 1]
+                        Xc = w[:, 2]
+                        Mn = [(Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i]) for i in range(len(t))]
+                        plt.plot(t, Mn)
+                        Pol.plot([p], "days", Mol_mass, mode = 'none')
+                        plt.show()
                         print(f'kr1 = {kr1}\nkr2 = {kr2}\nke1 = {ke1}\nke2 = {ke2}\ndelta = {de}\n')
                         print(Xc.tolist())
                         return "finished"
@@ -250,14 +255,15 @@ class Pol:
                         ke1 = c
                         ke2 = d
                         ded = de
+            t = np.linspace(p.days[0], p.days[-1], 101)
             w = odeint(f, y0, t, (kr1, kr2, ke1, ke2))
             y1 = w[:, 0]
             y2 = w[:, 1]
             Xc = w[:, 2]
-            Mn = [(Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i]) for i in range(len(p.days))]
+            Mn = [(Ceo - 0.4 * y1[i] - y2[i]) * Mo / (Nchain0 + 0.9 * y1[i]) for i in range(len(t))]
 
-            plt.plot(p.days, Mn)
-            Pol.plot([p], "days", Mol_mass, mode = 'extrapol')
+            plt.plot(t, Mn)
+            Pol.plot([p], "days", Mol_mass, mode = 'none')
             plt.show()
             print(f'kr1 = {kr1}\nkr2 = {kr2}\nke1 = {ke1}\nke2 = {ke2}\ndelta = {ded}\n')
             print(Xc.tolist())
