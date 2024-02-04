@@ -337,3 +337,134 @@ Pol.plot(Polymers[8:11],"days","Mw_p",mode='extrapol')
 Pol.plot(Polymers[:],"days","Mw_p",mode='extrapol')
 #for example only autocatalytic and noncatalytic random scission
 Pol.Gleadall(Polymers, np.linspace(1e-7, 1e-3, 101), 0, np.linspace(1e-7, 1e-3, 101), 0, 0.05, 17300, 72, 0, 17300, 0.00, 4.19e-24, 0.655, 0.4, 1, "Mw")
+
+
+def Glead(Mol_mass, pr, norm, legend, kr_n, kr_a, ke_n, ke_a, Ceo, Mo, Rm0, Xc0, W, px, Vc, Xmax, alpha, beta):
+    #alpha = 28
+    #beta = 2
+    def f(y, t, a, b, c, d):
+        y1, y2, Xc = y
+        l1 = (a + b * ((y2 + y1 / 4) / (1 - Xc)) ** 0.5) * (Ceo - W * Xc - y1 - y2) * beta * alpha ** (1 / beta) * Ceo ** (1 / beta - 1) * y1 ** (1 - 1 / beta)
+        l2 = (c + d * ((y2 + y1 / 4) / (1 - Xc)) ** 0.5) * 2 * (Nchain0 + Ceo ** (1 - 1 / beta) / alpha ** (1 / beta) * y1 ** (1 / beta) - y1 / 4)
+        return [
+            l1, 
+            l2, 
+            (Xmax - Xc) * px * Na * Vc * (l1 + l2)
+        ]
+    t = np.linspace(0, 1, 101)
+    y0 = [0, Rm0, Xc0]
+    Nchain0 = (Ceo - Rm0) * Mo / Mol_mass
+    
+    m_right = Mol_mass
+    fl = 0
+    while m_right > Mol_mass / 10:
+        t = np.linspace(0, 10 * t[-1], 101)
+        w = odeint(f, y0, t, (kr_n, kr_a, ke_n, ke_a))
+        y1 = w[:, 0]
+        y2 = w[:, 1]
+        Xc = w[:, 2]
+        Mn = [(Ceo - y1[i] - y2[i]) * Mo / (Nchain0 + Ceo ** (1 - 1 / beta) / alpha ** (1 / beta) * y1[i] ** (1 / beta) - y1[i] / 4) for i in range(len(t))]
+        if m_right == Mn[-1]:
+            ynew = t[-1]
+            fl = 1
+            break
+        m_right = Mn[-1]
+    else:
+        fff = interpolate.interp1d(Mn, t, fill_value = 'extrapolate', kind = 'cubic')
+        ynew = fff(Mol_mass / 10)
+        
+    t_new = np.linspace(0, ynew, 101) 
+    w = odeint(f, y0, t_new, (kr_n, kr_a, ke_n, ke_a))
+    y1 = w[:, 0]
+    y2 = w[:, 1]
+    Xc = w[:, 2]
+    Mn = [(Ceo - y1[i] - y2[i]) * Mo / (Nchain0 + Ceo ** (1 - 1 / beta) / alpha ** (1 / beta) * y1[i] ** (1 / beta) - y1[i] / 4) for i in range(len(t_new))]
+     
+    if norm == 1:
+        t_norm = [i / ynew for i in t_new]
+        Mn_norm = [i / Mol_mass for i in Mn]
+        plt.plot(t_norm, Mn_norm)
+        plt.xlabel('t / t₁₀', fontsize = 14)
+        plt.ylabel('Mn / Mn₀', fontsize = 14)
+    elif norm == 2:
+        y = [(y1[i] + y2[i]) / Ceo for i in range(len(y1))]
+        t_norm = [i / ynew for i in t_new]
+        plt.plot(t_norm, y)
+        plt.xlabel('t / t₁₀', fontsize = 14)
+        plt.ylabel('(Rol + Rm) / Ce0', fontsize = 14)
+    else:
+        plt.plot(t_new, Mn)
+        plt.xlabel('t, Дни', fontsize = 14)
+        plt.ylabel('Mn, Да', fontsize = 14)
+    if pr:
+        print(f'Mn = {Mn}')
+        print(f'Xc = {Xc}')
+        print(f'Rm = {y2}')
+        print(f'Rol = {y1}')
+    s = f'kʳₙ = {kr_n} день⁻¹, '
+    if kr_n != 0:
+        s += f'kʳₐ / kʳₙ = {round(kr_a / kr_n, 3)} (моль⁻¹ * м³)½, '
+    else:
+        s += f'kʳₐ = {kr_a} (моль⁻¹ * м³)½ * день⁻¹, '
+    s += f'\nkᵉₙ = {ke_n} день⁻¹, '
+    if ke_n != 0:
+        s += f'kᵉₐ / kᵉₙ = {round(ke_a / ke_n, 3)} (моль⁻¹ * м³)½'
+    else:
+        s += f'kᵉₐ = {ke_a} (моль⁻¹ * м³)½ * день⁻¹'
+    s += f',\nRm₀ = {Rm0 / Ceo * 100} %, Xc₀ = {Xc0}'
+    if fl:
+        legend.append(s)
+    else:
+        legend.append(s + f', t₁₀ = {round(float(ynew), 1)} дней')
+
+
+
+def non(Mn0, M0, k, norm, legend):
+    t10 = M0 / k * (9 / Mn0)
+    t = np.linspace(0, t10, 101)
+    Mn = [1 / (1 / Mn0 + k * i / M0) for i in t]
+    if norm:
+        t_norm = [i / t10 for i in t]
+        Mn_norm = [i / Mn0 for i in Mn]
+        plt.plot(t_norm, Mn_norm)
+        plt.xlabel('t / t₁₀', fontsize = 14)
+        plt.ylabel('Mn / Mn₀', fontsize = 14)
+    else:
+        plt.plot(t, Mn)
+        plt.xlabel('t, Дни', fontsize = 14)
+        plt.ylabel('Mn, Да', fontsize = 14)
+    legend.append(f'k = {k} день⁻¹, t₁₀ = {round(float(t10), 1)} дней')
+
+
+def auto1(Mn0, Ce0, k, norm, legend):
+    t10 = math.log(10) / k / Ce0
+    t = np.linspace(0, t10, 101)
+    Mn = [Mn0 * E ** (-k * i * Ce0) for i in t]
+    if norm:
+        t_norm = [i / t10 for i in t]
+        Mn_norm = [i / Mn0 for i in Mn]
+        plt.plot(t_norm, Mn_norm)
+        plt.xlabel('t / t₁₀', fontsize = 14)
+        plt.ylabel('Mn / Mn₀', fontsize = 14)
+    else:
+        plt.plot(t, Mn)
+        plt.xlabel('t, Дни', fontsize = 14)
+        plt.ylabel('Mn, Да', fontsize = 14)
+    legend.append(f'k = {k} моль⁻¹ * м³ * день⁻¹, t₁₀ = {round(float(t10), 1)} дней')
+
+
+def auto2(Mn0, Ce0, M0, k, norm, legend):
+    t10 = (10 ** 0.5 - 1) / k * (M0 / Ce0 / Mn0) ** 0.5
+    t = np.linspace(0, t10, 101)
+    Mn = [1 / ((1 / Mn0) ** 0.5 + k * i * (Ce0 / M0) ** 0.5) ** 2 for i in t]
+    if norm:
+        t_norm = [i / t10 for i in t]
+        Mn_norm = [i / Mn0 for i in Mn]
+        plt.plot(t_norm, Mn_norm)
+        plt.xlabel('t / t₁₀', fontsize = 14)
+        plt.ylabel('Mn / Mn₀', fontsize = 14)
+    else:
+        plt.plot(t, Mn)
+        plt.xlabel('t, Дни', fontsize = 14)
+        plt.ylabel('Mn, Да', fontsize = 14)
+    legend.append(f'k = {k} (моль⁻¹ * м³)½ * день⁻¹, t₁₀ = {round(float(t10), 1)} дней')
